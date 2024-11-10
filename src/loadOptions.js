@@ -20,6 +20,18 @@ export const booleanDefaults = {
   removeComments: false,
   clearInlineFunctions: false
 };
+export const formattingBooleanDefaults = {
+  emptyAttributes: true,
+  escapeInnerText: true,
+  selfClosingTag: false
+};
+const TAGS_WITH_WHITESPACE_PRESERVED_DEFAULTS = ['a', 'pre'];
+const VOID_ELEMENTS_DEFAULT = 'xhtml';
+const ALLOWED_VOID_ELEMENTS = Object.freeze([
+  'html',
+  'xhtml',
+  'xml'
+]);
 
 export const loadOptions = function () {
   /** @type {SETTINGS} globalThis.vueSnapshots */
@@ -32,14 +44,14 @@ export const loadOptions = function () {
   for (const booleanSetting in booleanDefaults) {
     const value = globalThis.vueSnapshots[booleanSetting];
     if (typeof(value) !== 'boolean') {
-      globalThis.vueSnapshots[booleanSetting] = booleanDefaults[booleanSetting];
       if (value !== undefined) {
         logger([
           'global.vueSnapshots.' + booleanSetting,
-          ' should be a boolean or undefined. Using default value ',
+          'should be a boolean or undefined. Using default value',
           '(' + booleanDefaults[booleanSetting] + ').'
-        ].join(''));
+        ].join(' '));
       }
+      globalThis.vueSnapshots[booleanSetting] = booleanDefaults[booleanSetting];
     }
   }
 
@@ -91,11 +103,72 @@ export const loadOptions = function () {
     if (!globalThis.vueSnapshots.formatting) {
       globalThis.vueSnapshots.formatting = {};
     }
-    if (typeof(globalThis.vueSnapshots.formatting.emptyAttributes) !== 'boolean') {
-      globalThis.vueSnapshots.formatting.emptyAttributes = true;
+
+    // Formatting - Booleans
+    for (const booleanSetting in formattingBooleanDefaults) {
+      const value = globalThis.vueSnapshots.formatting[booleanSetting];
+      if (typeof(value) !== 'boolean') {
+        if (value !== undefined) {
+          logger([
+            'global.vueSnapshots.formatting.' + booleanSetting,
+            'should be a boolean or undefined. Using default value',
+            '(' + formattingBooleanDefaults[booleanSetting] + ').'
+          ].join(' '));
+        }
+        globalThis.vueSnapshots.formatting[booleanSetting] = formattingBooleanDefaults[booleanSetting];
+      }
     }
-    if (typeof(globalThis.vueSnapshots.formatting.selfClosingTag) !== 'boolean') {
-      globalThis.vueSnapshots.formatting.selfClosingTag = false;
+
+    // Formatting - Whitespace Preserved
+    const whiteSpacePreservedOption = globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved;
+    const preserveWhitespaceMessage = [
+      'vueSnapshots.formatting.tagsWithWhitespacePreserved',
+      'must an be Array of tag names, like [\'a\' ,\'pre\'],',
+      'or a boolean for all tags, or no tags.'
+    ].join(' ');
+    if (Array.isArray(whiteSpacePreservedOption)) {
+      const justStrings = whiteSpacePreservedOption.filter(function (tag) {
+        return typeof(tag) === 'string';
+      });
+      if (whiteSpacePreservedOption.length !== justStrings.length) {
+        logger(preserveWhitespaceMessage);
+      }
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = justStrings;
+    } else if (typeof(whiteSpacePreservedOption) !== 'boolean') {
+      if (whiteSpacePreservedOption !== undefined) {
+        logger(preserveWhitespaceMessage);
+      }
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = TAGS_WITH_WHITESPACE_PRESERVED_DEFAULTS;
+    } else if (whiteSpacePreservedOption === false) {
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = [];
+    } else if (whiteSpacePreservedOption === true) {
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = true;
+    }
+
+    // Formatting - Attributes Per Line
+    if (
+      typeof(globalThis.vueSnapshots.formatting.attributesPerLine) !== 'number' || 
+      globalThis.vueSnapshots.formatting.attributesPerLine < 0 ||
+      globalThis.vueSnapshots.formatting.attributesPerLine % 1 !== 0
+    ) {
+      if (globalThis.vueSnapshots.formatting.attributesPerLine !== undefined) {
+        logger([
+          'global.vueSnapshots.formatting.attributesPerLine',
+          'must be a whole number.'
+        ].join(' '));
+      }
+      globalThis.vueSnapshots.formatting.attributesPerLine = 1;
+    }
+
+    // Formatting - Void Elements
+    if (!ALLOWED_VOID_ELEMENTS.includes(globalThis.vueSnapshots.formatting.voidElements)) {
+      if (globalThis.vueSnapshots.formatting.voidElements !== undefined) {
+        logger([
+          'global.vueSnapshots.formatting.voidElements',
+          'must be either \'xhtml\', \'html\', \'xml\', or undefined.'
+        ].join(' '));
+      }
+      globalThis.vueSnapshots.formatting.voidElements = VOID_ELEMENTS_DEFAULT;
     }
 
     const whiteSpacePreservedOption = globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved;
@@ -131,18 +204,35 @@ export const loadOptions = function () {
    * Clean up settings
    */
 
-  const permittedKeys = [
+  const permittedRootKeys = [
     ...Object.keys(booleanDefaults),
     'attributesToClear',
     'formatter',
     'formatting'
   ];
-  const allKeys = Object.keys(globalThis.vueSnapshots);
+  const permittedFormattingKeys = [
+    ...Object.keys(formattingBooleanDefaults),
+    'attributesPerLine',
+    'tagsWithWhitespacePreserved',
+    'voidElements',
+    'whiteSpacePreservedOption'
+  ];
+  const allRootKeys = Object.keys(globalThis.vueSnapshots);
 
-  for (const key of allKeys) {
-    if (!permittedKeys.includes(key)) {
-      delete globalThis.vueSnapshots[key];
+  for (const key of allRootKeys) {
+    if (!permittedRootKeys.includes(key)) {
       logger('Removed invalid setting global.vueSnapshots.' + key);
+      delete globalThis.vueSnapshots[key];
+    }
+  }
+
+  if (globalThis.vueSnapshots.formatting) {
+    const allFormattingKeys = Object.keys(globalThis.vueSnapshots.formatting);
+    for (const key of allFormattingKeys) {
+      if (!permittedFormattingKeys.includes(key)) {
+        logger('Removed invalid setting global.vueSnapshots.formatting.' + key);
+        delete globalThis.vueSnapshots.formatting[key];
+      }
     }
   }
 };

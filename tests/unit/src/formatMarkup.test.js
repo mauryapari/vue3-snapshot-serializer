@@ -12,63 +12,11 @@ const unformattedMarkup = `
 </div>
 `.trim();
 
-const formattedMarkup = `
-<div id="header">
-  <h1>
-    Hello World!
-  </h1>
-  <ul
-    id="main-list"
-    class="list"
-  >
-    <li>
-      <a
-        class="link"
-        href="#"
-      >My HTML</a>
-    </li>
-  </ul>
-</div>
-`.trim();
-
-const unformattedMarkupVoidElements = `
-<input>
-<input type="range"><input type="range" max="50">
-`.trim();
-
-const formattedMarkupVoidElementsWithHTML = `
-<input>
-<input type="range">
-<input
-  type="range"
-  max="50"
->
-`.trim();
-
-const formattedMarkupVoidElementsWithXHTML = `
-<input />
-<input type="range" />
-<input
-  type="range"
-  max="50"
-/>
-`.trim();
-
-const formattedMarkupVoidElementsWithClosingTag = `
-<input></input>
-<input type="range"></input>
-<input
-  type="range"
-  max="50"
-></input>
-`.trim();
-
 describe('Format markup', () => {
   const info = console.info;
 
   beforeEach(() => {
     globalThis.vueSnapshots = {
-      verbose: true,
       formatting: {}
     };
     console.info = vi.fn();
@@ -91,8 +39,25 @@ describe('Format markup', () => {
   test('Formats HTML to be diffable', () => {
     globalThis.vueSnapshots.formatter = 'diffable';
 
-    expect(formatMarkup(unformattedMarkup))
-      .toEqual(formattedMarkup);
+    expect(unformattedMarkup)
+      .toMatchInlineSnapshot(`
+        <div id="header">
+          <h1>
+            Hello World!
+          </h1>
+          <ul
+            class="list"
+            id="main-list"
+          >
+            <li>
+              <a
+                class="link"
+                href="#"
+              >My HTML</a>
+            </li>
+          </ul>
+        </div>
+      `);
 
     expect(console.info)
       .not.toHaveBeenCalled();
@@ -115,8 +80,13 @@ describe('Format markup', () => {
       return 5;
     };
 
-    expect(formatMarkup(unformattedMarkup))
-      .toEqual(unformattedMarkup);
+    expect(unformattedMarkup)
+      .toMatchInlineSnapshot(`
+        <div id="header">
+          <h1>Hello World!</h1>
+          <ul class="list" id="main-list"><li><a class="link" href="#">My HTML</a></li></ul>
+        </div>
+      `);
 
     expect(console.info)
       .toHaveBeenCalledWith('Vue 3 Snapshot Serializer: Your custom markup formatter must return a string.');
@@ -126,6 +96,34 @@ describe('Format markup', () => {
     test('No arguments', () => {
       expect(diffableFormatter())
         .toEqual('');
+    });
+  });
+
+  describe('HTML entity encoding', () => {
+    test('Retain', () => {
+      globalThis.vueSnapshots.formatting.escapeInnerText = true;
+      const input = '<pre><code>&lt;div title="text"&gt;1 &amp; 2&lt;/div&gt;</code></pre>';
+
+      expect(formatMarkup(input))
+        .toMatchInlineSnapshot(`
+          <pre>
+            <code>
+              &lt;div title=&quot;text&quot;&gt;1 &amp; 2&lt;/div&gt;
+            </code></pre>
+        `);
+    });
+
+    test('Discard', () => {
+      globalThis.vueSnapshots.formatting.escapeInnerText = false;
+      const input = '<pre><code>&lt;div title="text"&gt;1 &amp; 2&lt;/div&gt;</code></pre>';
+
+      expect(formatMarkup(input))
+        .toMatchInlineSnapshot(`
+          <pre>
+            <code>
+              <div title="text">1 & 2</div>
+            </code></pre>
+        `);
     });
   });
 
@@ -307,17 +305,224 @@ describe('Format markup', () => {
       globalThis.vueSnapshots.formatter = 'diffable';
     });
 
-    const voidElementTests = [
-      ['html', formattedMarkupVoidElementsWithHTML],
-      ['xhtml', formattedMarkupVoidElementsWithXHTML],
-      ['closingTag', formattedMarkupVoidElementsWithClosingTag]
-    ];
+    const INPUT = '<input><input type="range"><input type="range" max="50">';
 
-    test.each(voidElementTests)('Formats void elements using mode "%s"', (mode, expected) => {
-      globalThis.vueSnapshots.formatting.voidElements = mode;
+    test('Formats void elements using in HTML style', () => {
+      globalThis.vueSnapshots.formatting.voidElements = 'html';
 
-      expect(formatMarkup(unformattedMarkupVoidElements))
-        .toEqual(expected);
+      expect(INPUT)
+        .toMatchInlineSnapshot(`
+          <input>
+          <input type="range">
+          <input
+            max="50"
+            type="range"
+          >
+        `);
+    });
+
+    test('Formats void elements using in XHTML style', () => {
+      globalThis.vueSnapshots.formatting.voidElements = 'xhtml';
+
+      expect(INPUT)
+        .toMatchInlineSnapshot(`
+          <input />
+          <input type="range" />
+          <input
+            max="50"
+            type="range"
+          />
+        `);
+    });
+
+    test('Formats void elements using in XML style', () => {
+      globalThis.vueSnapshots.formatting.voidElements = 'xml';
+
+      expect(INPUT)
+        .toMatchInlineSnapshot(`
+          <input></input>
+          <input type="range"></input>
+          <input
+            max="50"
+            type="range"
+          ></input>
+        `);
+    });
+  });
+
+  describe('Attributes Per Line', () => {
+    let MyComponent;
+
+    beforeEach(() => {
+      MyComponent = {
+        template: `<span></span>
+        <span class="cow dog"></span>
+        <span class="cow dog" id="animals"></span>
+        <span class="cow dog" id="animals" title="Moo"></span>`
+      };
+      globalThis.vueSnapshots.formatter = 'diffable';
+    });
+
+    test('Attributes Per Line set to 0', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.attributesPerLine = 0;
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <span></span>
+          <span
+            class="cow dog"
+          ></span>
+          <span
+            class="cow dog"
+            id="animals"
+          ></span>
+          <span
+            class="cow dog"
+            id="animals"
+            title="Moo"
+          ></span>
+        `);
+    });
+
+    test('Attributes Per Line set to Default', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.attributesPerLine = 1;
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <span></span>
+          <span class="cow dog"></span>
+          <span
+            class="cow dog"
+            id="animals"
+          ></span>
+          <span
+            class="cow dog"
+            id="animals"
+            title="Moo"
+          ></span>
+        `);
+    });
+
+    test('Attributes Per Line set to 2', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.attributesPerLine = 2;
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <span></span>
+          <span class="cow dog"></span>
+          <span class="cow dog" id="animals"></span>
+          <span
+            class="cow dog"
+            id="animals"
+            title="Moo"
+          ></span>
+        `);
+    });
+
+    test('Attributes Per Line set to 3', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.attributesPerLine = 3;
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <span></span>
+          <span class="cow dog"></span>
+          <span class="cow dog" id="animals"></span>
+          <span class="cow dog" id="animals" title="Moo"></span>
+        `);
+    });
+  });
+
+  describe('Tags with White Space Preserved', () => {
+    let MyComponent;
+    beforeEach(() => {
+      MyComponent = {
+        template: `<div>Hello World</div>
+          <a>Hello World</a>
+          <pre>Hello World</pre>`
+      };
+      globalThis.vueSnapshots.formatter = 'diffable';
+    });
+
+    test('Default WhiteSpace Preserved Tags', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = ['a', 'pre'];
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <div>
+            Hello World
+          </div>
+          <a>Hello World</a>
+          <pre>Hello World</pre>
+        `);
+    });
+
+    test('Provided Tags are WhiteSpace Preserved Tags', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = ['div'];
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <div>Hello World</div>
+          <a>
+            Hello World
+          </a>
+          <pre>
+            Hello World
+          </pre>
+        `);
+    });
+
+    test('No Tags are WhiteSpace Preserved Tags', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = [];
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <div>
+            Hello World
+          </div>
+          <a>
+            Hello World
+          </a>
+          <pre>
+            Hello World
+          </pre>
+        `);
+    });
+
+    test('No Tags are WhiteSpace Preserved Tags using boolean', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = false;
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <div>
+            Hello World
+          </div>
+          <a>
+            Hello World
+          </a>
+          <pre>
+            Hello World
+          </pre>
+        `);
+    });
+
+    test('All tags are WhiteSpace Preserved Tags', async () => {
+      const wrapper = mount(MyComponent);
+      globalThis.vueSnapshots.formatting.tagsWithWhitespacePreserved = true;
+
+      expect(wrapper)
+        .toMatchInlineSnapshot(`
+          <div>Hello World</div>
+          <a>Hello World</a>
+          <pre>Hello World</pre>
+        `);
     });
   });
 

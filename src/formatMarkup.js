@@ -3,7 +3,10 @@
 
 import { parseFragment } from 'parse5';
 
-import { logger } from './helpers.js';
+import {
+  escapeHtml,
+  logger
+} from './helpers.js';
 
 /** @typedef {import('../types.js').FORMATTING} FORMATTING */
 
@@ -25,11 +28,6 @@ const VOID_ELEMENTS = Object.freeze([
   'wbr'
 ]);
 
-const WHITESPACE_DEPENDENT_TAGS = Object.freeze([
-  'a',
-  'pre'
-]);
-
 const ESCAPABLE_RAW_TEXT_ELEMENTS = Object.freeze([
   'textarea',
   'title'
@@ -38,28 +36,12 @@ const ESCAPABLE_RAW_TEXT_ELEMENTS = Object.freeze([
 /**
  * Uses Parse5 to create an AST from the markup. Loops over the AST to create a formatted HTML string.
  *
- * @param  {string}     markup   Any valid HTML
- * @param  {FORMATTING} options  Diffable formatting options
- * @return {string}              HTML formatted to be more easily diffable
+ * @param  {string} markup  Any valid HTML
+ * @return {string}         HTML formatted to be more easily diffable
  */
-export const diffableFormatter = function (markup, options) {
+export const diffableFormatter = function (markup) {
   markup = markup || '';
-  options = options || {};
-  if (typeof(options.emptyAttributes) !== 'boolean') {
-    options.emptyAttributes = true;
-  }
-  if (!['html', 'xhtml', 'closingTag'].includes(options.voidElements)) {
-    options.voidElements = 'xhtml';
-  }
-  if (typeof(options.selfClosingTag) !== 'boolean') {
-    options.selfClosingTag = false;
-  }
-  if (
-    !Array.isArray(options.tagsWithWhitespacePreserved) && 
-    typeof(options.tagsWithWhitespacePreserved) !== 'boolean'
-  ) {
-    options.tagsWithWhitespacePreserved = [...WHITESPACE_DEPENDENT_TAGS];
-  }
+  const options = globalThis.vueSnapshots.formatting;
 
   const astOptions = {
     sourceCodeLocationInfo: true
@@ -94,10 +76,14 @@ export const diffableFormatter = function (markup, options) {
     // InnerText
     if (node.nodeName === '#text') {
       if (node.value.trim()) {
+        let nodeValue = node.value;
+        if (options.escapeInnerText) {
+          nodeValue = escapeHtml(nodeValue);
+        }
         if (tagIsWhitespaceDependent) {
-          return node.value;
+          return nodeValue;
         } else {
-          return '\n' + '  '.repeat(indent) + node.value.trim();
+          return '\n' + '  '.repeat(indent) + nodeValue.trim();
         }
       }
       return '';
@@ -158,33 +144,30 @@ export const diffableFormatter = function (markup, options) {
     }
 
     // Add attributes
-    if (
-      !node.tagName ||
-      !node.attrs.length
-    ) {
-      result = result + endingAngleBracket;
-    } else if (node.attrs?.length === 1) {
-      let attr = node.attrs[0];
-      if (
-        !attr.value &&
-        !options.emptyAttributes
-      ) {
-        result = result + ' ' + attr.name + endingAngleBracket;
-      } else {
-        result = result + ' ' + attr.name + '="' + attr.value + '"' + endingAngleBracket;
-      }
-    } else if (node.attrs?.length) {
-      node.attrs.forEach((attr) => {
-        if (
-          !attr.value &&
-          !options.emptyAttributes
-        ) {
-          result = result + '\n' + '  '.repeat(indent + 1) + attr.name;
+    if (!node.attrs.length) {
+      result += endingAngleBracket;
+    } else {
+      const isNewLine = node.attrs.length > options.attributesPerLine;
+      const formattedAttr = node.attrs.map((attr) => {
+        const hasValue = attr.value || options.emptyAttributes;
+        let attrVal;
+        if (hasValue) {
+          attrVal = attr.name + '="' + (attr.value || '') + '"';
         } else {
-          result = result + '\n' + '  '.repeat(indent + 1) + attr.name + '="' + attr.value + '"';
+          attrVal = attr.name;
         }
-      });
-      result = result + '\n' + '  '.repeat(indent) + endingAngleBracket.trim();
+        if (isNewLine) {
+          return '\n' + '  '.repeat(indent + 1) + attrVal;
+        } else {
+          return ' ' + attrVal;
+        }
+      }).join('');
+  
+      if (node.attrs.length <= options.attributesPerLine) {
+        result += formattedAttr + endingAngleBracket;
+      } else {
+        result += formattedAttr + '\n' + '  '.repeat(indent) + endingAngleBracket.trim();
+      }
     }
 
     // Process child nodes
@@ -208,7 +191,7 @@ export const diffableFormatter = function (markup, options) {
       ) ||
       (
         tagIsVoidElement &&
-        options.voidElements === 'closingTag'
+        options.voidElements === 'xml'
       )
     ) {
       result = result + '</' + node.nodeName + '>';
